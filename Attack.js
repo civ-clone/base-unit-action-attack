@@ -8,10 +8,11 @@ class Attack extends Action_1.default {
     perform() {
         const [defender] = UnitRegistry_1.instance
             .getByTile(this.to())
-            .sort((a, b) => b.defence().value() - a.defence().value());
-        if (this.unit().attack().value() * Math.random() >=
+            .sort((a, b) => b.defence().value() - a.defence().value()), power = Math.min(1, this.unit().moves().value());
+        if ((this.unit().attack().value() * power) * Math.random() >=
             defender.defence().value() * Math.random()) {
             this.ruleRegistry().process(Defeated_1.Defeated, defender, this.unit());
+            this.unit().moves().subtract(power, this.constructor.name);
             return;
         }
         this.ruleRegistry().process(Defeated_1.Defeated, this.unit(), defender);
