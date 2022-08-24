@@ -23,7 +23,8 @@ export class Attack extends Action {
       (this.ruleRegistry() as IDefeatedRegistry).process(
         Defeated,
         defender,
-        this.unit()
+        this.unit(),
+        this
       );
 
       this.unit().moves().subtract(power, this.constructor.name);
@@ -34,7 +35,8 @@ export class Attack extends Action {
     (this.ruleRegistry() as IDefeatedRegistry).process(
       Defeated,
       this.unit(),
-      defender
+      defender,
+      this
     );
   }
 }
