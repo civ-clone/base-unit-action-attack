@@ -10,7 +10,8 @@ export declare class Attack extends Action {
     to: Tile,
     unit: Unit,
     ruleRegistry?: RuleRegistry,
-    unitRegistry?: UnitRegistry
+    unitRegistry?: UnitRegistry,
+    randomNumberGenerator?: () => number
   );
   perform(): void;
 }

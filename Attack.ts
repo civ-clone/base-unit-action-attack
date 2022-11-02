@@ -12,6 +12,7 @@ import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
 
 export class Attack extends Action {
+  #randomNumberGenerator: () => number;
   #unitRegistry: UnitRegistry;
 
   constructor(
@@ -19,11 +20,13 @@ export class Attack extends Action {
     to: Tile,
     unit: Unit,
     ruleRegistry: RuleRegistry = ruleRegistryInstance,
-    unitRegistry: UnitRegistry = unitRegistryInstance
+    unitRegistry: UnitRegistry = unitRegistryInstance,
+    randomNumberGenerator: () => number = () => Math.random()
   ) {
     super(from, to, unit, ruleRegistry);
 
     this.#unitRegistry = unitRegistry;
+    this.#randomNumberGenerator = randomNumberGenerator;
   }
 
   perform(): void {
@@ -36,8 +39,8 @@ export class Attack extends Action {
       power = Math.min(1, this.unit().moves().value());
 
     if (
-      this.unit().attack().value() * power * Math.random() >=
-      defender.defence().value() * Math.random()
+      this.unit().attack().value() * power * this.#randomNumberGenerator() >=
+      defender.defence().value() * this.#randomNumberGenerator()
     ) {
       this.ruleRegistry().process(Defeated, defender, this.unit(), this);
 
