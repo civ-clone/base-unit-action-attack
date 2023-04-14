@@ -8,6 +8,7 @@ import {
 } from '@civ-clone/core-unit/UnitRegistry';
 import Action from '@civ-clone/core-unit/Action';
 import Defeated from '@civ-clone/core-unit/Rules/Defeated';
+import Moved from '@civ-clone/core-unit/Rules/Moved';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
 
@@ -46,10 +47,14 @@ export class Attack extends Action {
 
       this.unit().moves().subtract(power, this.constructor.name);
 
+      this.ruleRegistry().process(Moved, this.unit(), this);
+
       return;
     }
 
     this.ruleRegistry().process(Defeated, this.unit(), defender, this);
+
+    this.ruleRegistry().process(Moved, this.unit(), this);
   }
 }
 
