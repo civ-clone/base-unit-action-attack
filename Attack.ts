@@ -11,6 +11,7 @@ import Defeated from '@civ-clone/core-unit/Rules/Defeated';
 import Moved from '@civ-clone/core-unit/Rules/Moved';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
+import { instance as rngInstance } from '@civ-clone/core-random';
 
 export class Attack extends Action {
   private _randomNumberGenerator: () => number;
@@ -22,7 +23,7 @@ export class Attack extends Action {
     unit: Unit,
     ruleRegistry: RuleRegistry = ruleRegistryInstance,
     unitRegistry: UnitRegistry = unitRegistryInstance,
-    randomNumberGenerator: () => number = () => Math.random()
+    randomNumberGenerator: () => number = rngInstance
   ) {
     super(from, to, unit, ruleRegistry);
 

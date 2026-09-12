@@ -6,8 +6,9 @@ const UnitRegistry_1 = require("@civ-clone/core-unit/UnitRegistry");
 const Action_1 = require("@civ-clone/core-unit/Action");
 const Defeated_1 = require("@civ-clone/core-unit/Rules/Defeated");
 const Moved_1 = require("@civ-clone/core-unit/Rules/Moved");
+const core_random_1 = require("@civ-clone/core-random");
 class Attack extends Action_1.default {
-    constructor(from, to, unit, ruleRegistry = RuleRegistry_1.instance, unitRegistry = UnitRegistry_1.instance, randomNumberGenerator = () => Math.random()) {
+    constructor(from, to, unit, ruleRegistry = RuleRegistry_1.instance, unitRegistry = UnitRegistry_1.instance, randomNumberGenerator = core_random_1.instance) {
         super(from, to, unit, ruleRegistry);
         this._unitRegistry = unitRegistry;
         this._randomNumberGenerator = randomNumberGenerator;
