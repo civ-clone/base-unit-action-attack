@@ -4,6 +4,7 @@ import Action from '@civ-clone/core-unit/Action';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
 export declare class Attack extends Action {
+  static readonly transient: string[];
   private _randomNumberGenerator;
   private _unitRegistry;
   constructor(

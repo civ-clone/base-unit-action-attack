@@ -14,6 +14,7 @@ import Unit from '@civ-clone/core-unit/Unit';
 import { instance as rngInstance } from '@civ-clone/core-random';
 
 export class Attack extends Action {
+  static readonly transient = ['_randomNumberGenerator', '_unitRegistry'];
   private _randomNumberGenerator: () => number;
   private _unitRegistry: UnitRegistry;
 

@@ -29,5 +29,6 @@ class Attack extends Action_1.default {
     }
 }
 exports.Attack = Attack;
+Attack.transient = ['_randomNumberGenerator', '_unitRegistry'];
 exports.default = Attack;
 //# sourceMappingURL=Attack.js.map
