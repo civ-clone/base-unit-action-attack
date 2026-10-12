@@ -12,6 +12,7 @@ import Moved from '@civ-clone/core-unit/Rules/Moved';
 import Tile from '@civ-clone/core-world/Tile';
 import Unit from '@civ-clone/core-unit/Unit';
 import { instance as rngInstance } from '@civ-clone/core-random';
+import strength from '@civ-clone/core-unit/strength';
 
 export class Attack extends Action {
   static readonly transient = ['_randomNumberGenerator', '_unitRegistry'];
@@ -33,17 +34,20 @@ export class Attack extends Action {
   }
 
   perform(): void {
-    const [defender]: Unit[] = this._unitRegistry
+    // Each unit on the tile at the strength it would defend at against this attacker, strongest first: that's the one
+    //  that defends.
+    const [[defender, [attack, defence]]] = this._unitRegistry
         .getByTile(this.to())
-        .sort(
-          (a: Unit, b: Unit): number =>
-            b.defence().value() - a.defence().value()
-        ),
+        .map((unit: Unit): [Unit, ReturnType<typeof strength>] => [
+          unit,
+          strength(this.unit(), unit, this.ruleRegistry()),
+        ])
+        .sort(([, [, a]], [, [, b]]): number => b.value() - a.value()),
       power = Math.min(1, this.unit().moves().value());
 
     if (
-      this.unit().attack().value() * power * this._randomNumberGenerator() >=
-      defender.defence().value() * this._randomNumberGenerator()
+      attack.value() * power * this._randomNumberGenerator() >=
+      defence.value() * this._randomNumberGenerator()
     ) {
       this.ruleRegistry().process(Defeated, defender, this.unit(), this);
 
