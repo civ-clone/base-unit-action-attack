@@ -19,6 +19,11 @@ import Unit from '@civ-clone/core-unit/Unit';
 import { instance as rngInstance } from '@civ-clone/core-random';
 import strength from '@civ-clone/core-unit/strength';
 
+/**
+ * A `CombatResolver` gave a result `Attack` can't apply: a bug in the ruleset, not something a player did.
+ */
+export class CombatResultError extends Error {}
+
 export class Attack extends Action {
   static readonly transient = ['_randomNumberGenerator', '_unitRegistry'];
   private _randomNumberGenerator: () => number;
@@ -54,18 +59,22 @@ export class Attack extends Action {
             )
           : this.rankDefenders(candidates),
       power = Math.min(1, this.unit().moves().value()),
-      [result] = this.ruleRegistry().process(
-        CombatResolver,
-        this.unit(),
-        defender,
-        attack,
-        defence,
-        power,
-        this._randomNumberGenerator
-      );
+      result = this.ruleRegistry()
+        .process(
+          CombatResolver,
+          this.unit(),
+          defender,
+          attack,
+          defence,
+          power,
+          this._randomNumberGenerator
+        )
+        .find(
+          (answer: CombatResult | undefined): boolean => answer !== undefined
+        );
 
     if (result !== undefined) {
-      this.resolve(result, power);
+      this.resolve(result, defender, power);
 
       return;
     }
@@ -90,7 +99,8 @@ export class Attack extends Action {
 
   /**
    * The candidates in the order the `DefenderRank` rules score them, highest first; equal scores keep the square's
-   *  order. A unit no rule answers for scores its defence.
+   *  order. A unit's score is the first answer that isn't `undefined`, its defence if there is none, and `-Infinity`
+   *  for `NaN`.
    */
   private rankDefenders(
     candidates: [Unit, ReturnType<typeof strength>][]
@@ -101,18 +111,20 @@ export class Attack extends Action {
           [Unit, ReturnType<typeof strength>],
           number
         ] => {
-          const [score = defence.value()] = this.ruleRegistry().process(
-            DefenderRank,
-            this.unit(),
-            unit,
-            attack,
-            defence
-          );
+          const answer = this.ruleRegistry()
+              .process(DefenderRank, this.unit(), unit, attack, defence)
+              .find(
+                (score: number | undefined): boolean => score !== undefined
+              ),
+            score = answer === undefined ? defence.value() : answer;
 
-          return [[unit, [attack, defence]], score];
+          return [
+            [unit, [attack, defence]],
+            Number.isNaN(score) ? -Infinity : score,
+          ];
         }
       )
-      .sort(([, a], [, b]): number => b - a)
+      .sort(([, a], [, b]): number => (a === b ? 0 : b > a ? 1 : -1))
       .map(
         ([candidate]: [[Unit, ReturnType<typeof strength>], number]): [
           Unit,
@@ -122,27 +134,51 @@ export class Attack extends Action {
   }
 
   /**
-   * Applies a `CombatResolver`'s result: the winner keeps the damage it took (`Damaged`, if it took any), the loser is
-   *  `Defeated`, and an attacker that won spends `power` of its moves, as after the single roll.
+   * Applies a `CombatResolver`'s result: the winner keeps the damage it took, the loser is `Defeated`, an attacker that
+   *  won spends `power` of its moves as after the single roll, and then `Damaged` is processed for a winner that took
+   *  damage, before `Moved`. A result that doesn't name this battle's attacker and defender as winner and loser, or that
+   *  leaves the winner with no hit points, is a bug in the ruleset: it throws `CombatResultError` and changes nothing.
    */
-  private resolve(result: CombatResult, power: number): void {
+  private resolve(result: CombatResult, defender: Unit, power: number): void {
     const attacker = this.unit(),
-      { winner, loser } = result,
-      damage =
-        winner === attacker ? result.attackerDamage : result.defenderDamage;
+      { winner, loser } = result;
 
-    if (damage > 0) {
+    if (
+      !(
+        (winner === attacker && loser === defender) ||
+        (winner === defender && loser === attacker)
+      )
+    ) {
+      throw new CombatResultError(
+        'A CombatResolver result must name the attacker and the defender as the winner and the loser, one each.'
+      );
+    }
+
+    const damage =
+        winner === attacker ? result.attackerDamage : result.defenderDamage,
+      damaged = damage > 0,
+      [, maximum] = winner.hitPoints();
+
+    if (damaged && winner.damage() + damage >= maximum) {
+      throw new CombatResultError(
+        `A CombatResolver result must leave the winner alive: ${
+          winner.damage() + damage
+        } damage of ${maximum} hit points.`
+      );
+    }
+
+    if (damaged) {
       winner.setDamage(winner.damage() + damage);
     }
 
     this.ruleRegistry().process(Defeated, loser, winner, this);
 
-    if (damage > 0) {
-      this.ruleRegistry().process(Damaged, winner, loser, this);
-    }
-
     if (winner === attacker) {
       attacker.moves().subtract(power, this.constructor.name);
+    }
+
+    if (damaged) {
+      this.ruleRegistry().process(Damaged, winner, loser, this);
     }
 
     this.ruleRegistry().process(Moved, attacker, this);

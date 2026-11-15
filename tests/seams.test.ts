@@ -2,13 +2,19 @@ import CombatResolver, {
   CombatResult,
 } from '@civ-clone/core-unit/Rules/CombatResolver';
 import { scripted, setUp } from './lib/setUp';
-import Attack from '../Attack';
+import Attack, { CombatResultError } from '../Attack';
 import Criterion from '@civ-clone/core-rule/Criterion';
 import Damaged from '@civ-clone/core-unit/Rules/Damaged';
 import DefenderRank from '@civ-clone/core-unit/Rules/DefenderRank';
 import Effect from '@civ-clone/core-rule/Effect';
 import Unit from '@civ-clone/core-unit/Unit';
-import { Attack as AttackYield, Defence } from '@civ-clone/core-unit/Yields';
+import {
+  Attack as AttackYield,
+  Defence,
+  HitPoints,
+} from '@civ-clone/core-unit/Yields';
+import { Yield as YieldRule } from '@civ-clone/core-unit/Rules/Yield';
+import YieldValue from '@civ-clone/core-yield/Yield';
 import { expect } from 'chai';
 
 describe('Attack seams', (): void => {
@@ -147,6 +153,52 @@ describe('Attack seams', (): void => {
       expect(second.destroyed()).to.false;
     });
 
+    it('should take the first score that is not undefined, and rank a NaN score last', (): void => {
+      const {
+          attackerPlayer,
+          defenderPlayer,
+          events,
+          from,
+          ruleRegistry,
+          to,
+          unit,
+          unitRegistry,
+        } = setUp(),
+        attacker = unit(from, attackerPlayer, 1, 1),
+        broken = unit(to, defenderPlayer, 1, 9),
+        low = unit(to, defenderPlayer, 1, 1),
+        high = unit(to, defenderPlayer, 1, 2);
+
+      ruleRegistry.register(
+        new DefenderRank(
+          new Effect((): number => undefined as unknown as number)
+        ),
+        new DefenderRank(
+          new Effect(
+            (
+              attacker: Unit,
+              candidate: Unit,
+              attack: AttackYield,
+              defence: Defence
+            ): number => (candidate === broken ? NaN : -defence.value())
+          )
+        )
+      );
+
+      new Attack(
+        from,
+        to,
+        attacker,
+        ruleRegistry,
+        unitRegistry,
+        scripted(0.9, 0.1).rng
+      ).perform();
+
+      // Scores: NaN (as -Infinity), -1, -2.
+      expect(events[0]).to.deep.equal(['defeated', low, attacker]);
+      expect(high.destroyed()).to.false;
+    });
+
     it('should score a unit no rule answers for by its defence', (): void => {
       const {
           attackerPlayer,
@@ -185,6 +237,18 @@ describe('Attack seams', (): void => {
   });
 
   describe('CombatResolver', (): void => {
+    // Every unit has `maximum` hit points.
+    const hitPoints = (maximum: number) =>
+      new YieldRule(
+        new Criterion(
+          (unit: Unit, unitYield: YieldValue): boolean =>
+            unitYield instanceof HitPoints
+        ),
+        new Effect((unit: Unit, unitYield: YieldValue): void =>
+          unitYield.set(maximum)
+        )
+      );
+
     const withResolver = (
       resolve: (
         attacker: Unit,
@@ -202,9 +266,16 @@ describe('Attack seams', (): void => {
         new CombatResolver(new Effect(resolve)),
         new Damaged(
           new Effect((damaged: Unit, by: Unit, action: Attack): void => {
-            events.push(['damaged', damaged, by, damaged.damage()]);
+            events.push([
+              'damaged',
+              damaged,
+              by,
+              damaged.damage(),
+              action.unit().moves().value(),
+            ]);
           })
-        )
+        ),
+        hitPoints(10)
       );
 
       return context;
@@ -282,7 +353,8 @@ describe('Attack seams', (): void => {
       expect(Object.keys(defender)).not.to.include('_damage');
       expect(events).to.deep.equal([
         ['defeated', defender, attacker],
-        ['damaged', attacker, defender, 5],
+        // After the attacker has spent its power.
+        ['damaged', attacker, defender, 5, 0],
         ['moved', attacker, 0],
       ]);
     });
@@ -318,7 +390,7 @@ describe('Attack seams', (): void => {
       expect(defender.damage()).to.equal(3);
       expect(events).to.deep.equal([
         ['defeated', attacker, defender],
-        ['damaged', defender, attacker, 3],
+        ['damaged', defender, attacker, 3, 1],
         ['moved', attacker, 1],
       ]);
     });
@@ -390,6 +462,214 @@ describe('Attack seams', (): void => {
 
       expect(draws).to.deep.equal([0.2, 0.8]);
       expect(events[0]).to.deep.equal(['defeated', attacker, defender]);
+    });
+
+    it('should use the first result that is not undefined', (): void => {
+      const context = setUp(),
+        {
+          attackerPlayer,
+          defenderPlayer,
+          events,
+          from,
+          ruleRegistry,
+          to,
+          unit,
+          unitRegistry,
+        } = context,
+        attacker = unit(from, attackerPlayer, 1, 1),
+        defender = unit(to, defenderPlayer, 1, 1),
+        ran: string[] = [];
+
+      // One that matches but answers nothing, then one that answers.
+      ruleRegistry.register(
+        hitPoints(10),
+        new CombatResolver(
+          new Effect((): CombatResult => {
+            ran.push('silent');
+
+            return undefined as unknown as CombatResult;
+          })
+        ),
+        new CombatResolver(
+          new Effect((attacker: Unit, defender: Unit): CombatResult => {
+            ran.push('answers');
+
+            return {
+              winner: defender,
+              loser: attacker,
+              attackerDamage: 10,
+              defenderDamage: 2,
+            };
+          })
+        )
+      );
+
+      new Attack(
+        from,
+        to,
+        attacker,
+        ruleRegistry,
+        unitRegistry,
+        scripted().rng
+      ).perform();
+
+      expect(ran).to.deep.equal(['silent', 'answers']);
+      expect(defender.damage()).to.equal(2);
+      expect(events[0]).to.deep.equal(['defeated', attacker, defender]);
+    });
+
+    it('should use the first of two answers, though both resolvers run', (): void => {
+      const context = setUp(),
+        {
+          attackerPlayer,
+          defenderPlayer,
+          events,
+          from,
+          ruleRegistry,
+          to,
+          unit,
+          unitRegistry,
+        } = context,
+        attacker = unit(from, attackerPlayer, 1, 1),
+        defender = unit(to, defenderPlayer, 1, 1),
+        ran: string[] = [];
+
+      ruleRegistry.register(
+        hitPoints(10),
+        new CombatResolver(
+          new Effect((attacker: Unit, defender: Unit): CombatResult => {
+            ran.push('first');
+
+            return {
+              winner: attacker,
+              loser: defender,
+              attackerDamage: 1,
+              defenderDamage: 10,
+            };
+          })
+        ),
+        new CombatResolver(
+          new Effect((attacker: Unit, defender: Unit): CombatResult => {
+            ran.push('second');
+
+            return {
+              winner: defender,
+              loser: attacker,
+              attackerDamage: 10,
+              defenderDamage: 1,
+            };
+          })
+        )
+      );
+
+      new Attack(
+        from,
+        to,
+        attacker,
+        ruleRegistry,
+        unitRegistry,
+        scripted().rng
+      ).perform();
+
+      expect(ran).to.deep.equal(['first', 'second']);
+      expect(attacker.damage()).to.equal(1);
+      expect(events[0]).to.deep.equal(['defeated', defender, attacker]);
+    });
+
+    it('should refuse a result that does not name the attacker and the defender, one each', (): void => {
+      const outsider = { id: 'outsider' } as unknown as Unit;
+
+      (
+        [
+          (attacker: Unit, defender: Unit) => [attacker, attacker],
+          (attacker: Unit, defender: Unit) => [defender, defender],
+          (attacker: Unit, defender: Unit) => [outsider, defender],
+          (attacker: Unit, defender: Unit) => [attacker, outsider],
+        ] as ((attacker: Unit, defender: Unit) => [Unit, Unit])[]
+      ).forEach((pick): void => {
+        const {
+            attackerPlayer,
+            defenderPlayer,
+            events,
+            from,
+            ruleRegistry,
+            to,
+            unit,
+            unitRegistry,
+          } = withResolver((attacker, defender) => {
+            const [winner, loser] = pick(attacker, defender);
+
+            return { winner, loser, attackerDamage: 1, defenderDamage: 1 };
+          }),
+          attacker = unit(from, attackerPlayer, 1, 1),
+          defender = unit(to, defenderPlayer, 1, 1);
+
+        expect((): void =>
+          new Attack(
+            from,
+            to,
+            attacker,
+            ruleRegistry,
+            unitRegistry,
+            scripted().rng
+          ).perform()
+        ).to.throw(CombatResultError);
+        expect(events).to.deep.equal([]);
+        expect(attacker.damage()).to.equal(0);
+        expect(defender.damage()).to.equal(0);
+        expect(attacker.moves().value()).to.equal(1);
+      });
+    });
+
+    it('should refuse a result that leaves the winner with no hit points', (): void => {
+      const {
+          attackerPlayer,
+          defenderPlayer,
+          events,
+          from,
+          ruleRegistry,
+          to,
+          unit,
+          unitRegistry,
+        } = withResolver((attacker, defender) => ({
+          winner: attacker,
+          loser: defender,
+          attackerDamage: 6,
+          defenderDamage: 10,
+        })),
+        attacker = unit(from, attackerPlayer, 1, 1),
+        defender = unit(to, defenderPlayer, 1, 1);
+
+      // 4 + 6 reaches the 10 hit points.
+      attacker.setDamage(4);
+
+      expect((): void =>
+        new Attack(
+          from,
+          to,
+          attacker,
+          ruleRegistry,
+          unitRegistry,
+          scripted().rng
+        ).perform()
+      ).to.throw(CombatResultError, 'alive');
+      expect(events).to.deep.equal([]);
+      expect(attacker.damage()).to.equal(4);
+      expect(defender.destroyed()).to.false;
+
+      // 3 + 6 leaves 1.
+      attacker.setDamage(3);
+
+      new Attack(
+        from,
+        to,
+        attacker,
+        ruleRegistry,
+        unitRegistry,
+        scripted().rng
+      ).perform();
+
+      expect(attacker.damage()).to.equal(9);
     });
   });
 });
