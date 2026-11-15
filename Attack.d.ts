@@ -16,5 +16,15 @@ export declare class Attack extends Action {
     randomNumberGenerator?: () => number
   );
   perform(): void;
+  /**
+   * The candidates in the order the `DefenderRank` rules score them, highest first; equal scores keep the square's
+   *  order. A unit no rule answers for scores its defence.
+   */
+  private rankDefenders;
+  /**
+   * Applies a `CombatResolver`'s result: the winner keeps the damage it took (`Damaged`, if it took any), the loser is
+   *  `Defeated`, and an attacker that won spends `power` of its moves, as after the single roll.
+   */
+  private resolve;
 }
 export default Attack;
